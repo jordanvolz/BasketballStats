@@ -17,8 +17,8 @@
 //process files so that each line includes the year
 for (i <- 1980 to 2016){
      println(i)
-     val yearStats=sc.textFile("/user/cloudera/BasketballStats/leagues_NBA_" + i +"*")
-     yearStats.filter(x=>x.contains(",")).map(x=> (i,x)).saveAsTextFile("/user/cloudera/BasketballStatsWithYear/"+i+"/")
+     val yearStats = sc.textFile(s"/user/cloudera/BasketballStats/leagues_NBA_$i*")
+     yearStats.filter(x => x.contains(",")).map(x =>  (i,x)).saveAsTextFile(s"/user/cloudera/BasketballStatsWithYear/$i/")
 }
 
 
@@ -37,6 +37,7 @@ import org.apache.spark.util.StatCounter
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
+import scala.collection.mutable.ListBuffer
 
 //helper funciton to compute normalized value
 def statNormalize(stat:Double, max:Double, min:Double)={
@@ -276,7 +277,7 @@ val zBroadcastStats=sc.broadcast(zStats)
 val nStats=filteredStats.map(x=>bbParse(x,broadcastStats.value,zBroadcastStats.value))
 
 //map RDD to RDD[Row] so that we can turn it into a dataframe
-val nPlayer= nStats.map(x=>Row(x.name,x.year,x.age,x.position,x.team,x.gp,x.gs,x.mp,x.stats(0),x.stats(1),x.stats(2),x.stats(3),x.stats(4),x.stats(5),x.stats(6),x.stats(7),x.stats(8),x.stats(9),x.stats(10),x.stats(11),x.stats(12),x.stats(13),x.stats(14),x.stats(15),x.stats(16),x.stats(17),x.stats(18),x.stats(19),x.stats(20),x.stats(21),x.statsZ(0),x.statsZ(1),x.statsZ(2),x.statsZ(3),x.statsZ(4),x.statsZ(5),x.statsZ(6),x.statsZ(7),x.statsZ(8),x.valueZ,x.statsN(0),x.statsN(1),x.statsN(2),x.statsN(3),x.statsN(4),x.statsN(5),x.statsN(6),x.statsN(7),x.statsN(8),x.valueN))
+val nPlayer = nStats.map(x => Row.fromSeq(Array(x.name,x.year,x.age,x.position,x.team,x.gp,x.gs,x.mp) ++ x.stats ++ x.statsZ ++ Array(x.valueZ) ++ x.statsN ++ Array(x.valueN))) 
 
 //create schema for the data frame
 val schemaN =StructType(
@@ -352,7 +353,7 @@ dfPlayers.saveAsTable("Players")
 //Calculate value by age + experience
 
 //group data by player name
-val pStats=nStats.map(x=>(x.name,(x.valueN,x.valueZ,x.age,x.year,x.statsZ))).keyBy(x=>x._1).groupByKey()
+val pStats=nStats.map(x=>(x.name,(x.valueN,x.valueZ,x.age,x.year,x.statsZ))).groupByKey()
 pStats.cache
 
 //for each player, go through all the years and calculate the change in valueZ and valueN, save into two lists 
@@ -360,31 +361,30 @@ pStats.cache
 //exclude players who played in 1980 from experience, as we only have partial data for them
 val excludeNames=dfPlayers.filter(dfPlayers("year")===1980).select(dfPlayers("name")).map(x=>x.mkString).toArray.mkString(",")
 
-val pStats1=pStats.map{ case(x,y)=>{
-     var last: Int =0
-     var deltaZ: Double=0
-     var deltaN:Double=0
-     var valueZ:Double=0
-     var valueN:Double=0
-     var exp:Int=0
-     var aList: List[(Int,Array[Double])]=List()
-     var eList: List[(Int,Array[Double])]=List()
-     y.foreach( z=> {
+val pStats1=pStats.map{ case(name,stats) => 
+     var last =0
+     var deltaZ = 0.0
+     var deltaN = 0.0
+     var valueZ = 0.0
+     var valueN = 0.0
+     var exp = 0
+     val aList = ListBuffer[(Int,Array[Double])]()
+     val eList = ListBuffer[(Int,Array[Double])]()
+     stats.foreach( z => {
           if (last>0){
-               deltaN=z._2._1 - valueN
-               deltaZ=z._2._2 - valueZ
+               deltaN = z._1 - valueN
+               deltaZ = z._2 - valueZ
           }else{
-               deltaN=Double.NaN
-               deltaZ=Double.NaN
+               deltaN = Double.NaN
+               deltaZ = Double.NaN
           }
-          valueN=z._2._1
-          valueZ=z._2._2
-          last=z._2._3
-          aList++=List((last, Array(valueZ,valueN,deltaZ,deltaN)))
-          if (!excludeNames.contains(x)){
-              eList++=List((exp, Array(valueZ,valueN,deltaZ,deltaN)))
-              exp+=1
-          }
+          valueN = z._1
+          valueZ = z._2
+          last = z._3
+          aList += ((last, Array(valueZ,valueN,deltaZ,deltaN)))
+          if (!excludeNames.contains(z._1)){
+              eList += ((exp, Array(valueZ,valueN,deltaZ,deltaN)))
+              exp += 1
           })
           (aList,eList)
      }
