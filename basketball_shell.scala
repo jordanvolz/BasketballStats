@@ -386,8 +386,8 @@ val pStats1=pStats.map{ case(name,stats) =>
               eList += ((exp, Array(valueZ,valueN,deltaZ,deltaN)))
               exp += 1
           }
-          (aList,eList)
      })
+     (aList,eList)
 }
 
 pStats1.cache
