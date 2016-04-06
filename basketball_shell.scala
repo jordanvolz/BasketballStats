@@ -17,7 +17,7 @@
 //process files so that each line includes the year
 for (i <- 1980 to 2016){
      println(i)
-     val yearStats = sc.textFile(s"/user/cloudera/BasketballStats/leagues_NBA_$i*")
+     val yearStats = sc.textFile(s"/user/cloudera/BasketballStats/leagues_NBA_$i*").repartition(sc.defaultParallelism)
      yearStats.filter(x => x.contains(",")).map(x =>  (i,x)).saveAsTextFile(s"/user/cloudera/BasketballStatsWithYear/$i/")
 }
 
@@ -41,11 +41,8 @@ import scala.collection.mutable.ListBuffer
 
 //helper funciton to compute normalized value
 def statNormalize(stat:Double, max:Double, min:Double)={
-     if (stat>0){
-          stat/max
-     }else{
-          stat/min*(-1)
-     }
+     val newmax=math.max(math.abs(max),math.abs(min))
+     stat/newmax
 }
 
 //Holds initial bball stats + weighted stats + normalized stats
@@ -70,34 +67,21 @@ def bbParse(input: String,bStats: scala.collection.Map[String,Double]=Map.empty,
      var valueN:Double=Double.NaN
 
      if (!bStats.isEmpty){
-         val fg=(stats(0)-bStats.apply(year.toString+"_FG_avg"))/bStats.apply(year.toString+"_FG_stdev")
-         val fga=stats(1)/bStats.apply(year.toString+"_FGA_avg")
-         val fgp=(stats(2)-bStats.apply(year.toString+"_FG%_avg"))/bStats.apply(year.toString+"_FG%_stdev")
+         val fg=(stats(2)-bStats.apply(year.toString+"_FG%_avg"))*stats(1)
          val tp=(stats(3)-bStats.apply(year.toString+"_3P_avg"))/bStats.apply(year.toString+"_3P_stdev")
-         val tpa=(stats(4)-bStats.apply(year.toString+"_3PA_avg"))/bStats.apply(year.toString+"_3PA_stdev")
-         val tpp=(stats(5)-bStats.apply(year.toString+"_3P%_avg"))/bStats.apply(year.toString+"_3P%_stdev")
-         val dp=(stats(6)-bStats.apply(year.toString+"_2P_avg"))/bStats.apply(year.toString+"_2P_stdev")
-         val dpa=(stats(7)-bStats.apply(year.toString+"_2PA_avg"))/bStats.apply(year.toString+"_2PA_stdev")
-         val dpp=(stats(8)-bStats.apply(year.toString+"_2P%_avg"))/bStats.apply(year.toString+"_2P%_stdev")
-         val efg=(stats(9)-bStats.apply(year.toString+"_eFG%_avg"))/bStats.apply(year.toString+"_eFG%_stdev")
-         val ft=(stats(10)-bStats.apply(year.toString+"_FT_avg"))/bStats.apply(year.toString+"_FT_stdev")
-         val fta=stats(11)/bStats.apply(year.toString+"_FTA_avg")
-         val ftp=(stats(12)-bStats.apply(year.toString+"_FT%_avg"))/bStats.apply(year.toString+"_FT%_stdev")
-         val orb=(stats(13)-bStats.apply(year.toString+"_ORB_avg"))/bStats.apply(year.toString+"_ORB_stdev")
-         val drb=(stats(14)-bStats.apply(year.toString+"_DRB_avg"))/bStats.apply(year.toString+"_DRB_stdev")
+         val ft=(stats(12)-bStats.apply(year.toString+"_FT%_avg"))*stats(11)
          val trb=(stats(15)-bStats.apply(year.toString+"_TRB_avg"))/bStats.apply(year.toString+"_TRB_stdev")
          val ast=(stats(16)-bStats.apply(year.toString+"_AST_avg"))/bStats.apply(year.toString+"_AST_stdev")
          val stl=(stats(17)-bStats.apply(year.toString+"_STL_avg"))/bStats.apply(year.toString+"_STL_stdev")
          val blk=(stats(18)-bStats.apply(year.toString+"_BLK_avg"))/bStats.apply(year.toString+"_BLK_stdev")
          val tov=(stats(19)-bStats.apply(year.toString+"_TOV_avg"))/bStats.apply(year.toString+"_TOV_stdev")*(-1)
-         val pf=(stats(20)-bStats.apply(year.toString+"_PF_avg"))/bStats.apply(year.toString+"_PF_stdev")
          val pts=(stats(21)-bStats.apply(year.toString+"_PTS_avg"))/bStats.apply(year.toString+"_PTS_stdev")
-         statsZ=Array(fgp*fga,ftp*fta,tp,trb,ast,stl,blk,tov,pts)
+         statsZ=Array(fg,ft,tp,trb,ast,stl,blk,tov,pts)
          valueZ = statsZ.reduce(_+_)
 
          if (!zStats.isEmpty){
-             val zfg=(fgp*fga-zStats.apply(year.toString+"_FG_avg"))/zStats.apply(year.toString+"_FG_stdev")
-             val zft=(ftp*fta-zStats.apply(year.toString+"_FT_avg"))/zStats.apply(year.toString+"_FT_stdev")
+             val zfg=(fg-zStats.apply(year.toString+"_FG_avg"))/zStats.apply(year.toString+"_FG_stdev")
+             val zft=(ft-zStats.apply(year.toString+"_FT_avg"))/zStats.apply(year.toString+"_FT_stdev")
              val fgN=statNormalize(zfg,(zStats.apply(year.toString+"_FG_max")-zStats.apply(year.toString+"_FG_avg"))/zStats.apply(year.toString+"_FG_stdev"),(zStats.apply(year.toString+"_FG_min")-zStats.apply(year.toString+"_FG_avg"))/zStats.apply(year.toString+"_FG_stdev"))
              val ftN=statNormalize(zft,(zStats.apply(year.toString+"_FT_max")-zStats.apply(year.toString+"_FT_avg"))/zStats.apply(year.toString+"_FT_stdev"),(zStats.apply(year.toString+"_FT_min")-zStats.apply(year.toString+"_FT_avg"))/zStats.apply(year.toString+"_FT_stdev"))
              val tpN=statNormalize(tp,zStats.apply(year.toString+"_3P_max"),zStats.apply(year.toString+"_3P_min"))
@@ -117,11 +101,11 @@ def bbParse(input: String,bStats: scala.collection.Map[String,Double]=Map.empty,
 }
    
 //stat counter class -- need printStats method to print out the stats. Useful for transformations
-class bballStatCounter extends Serializable {
+class BballStatCounter extends Serializable {
   val stats: StatCounter = new StatCounter()
   var missing: Long = 0
 
-  def add(x: Double): bballStatCounter = {
+  def add(x: Double): BballStatCounter = {
     if (x.isNaN) {
       missing += 1
     } else {
@@ -130,7 +114,7 @@ class bballStatCounter extends Serializable {
     this
   }
 
-  def merge(other: bballStatCounter): bballStatCounter = {
+  def merge(other: BballStatCounter): BballStatCounter = {
     stats.merge(other.stats)
     missing += other.missing
     this
@@ -145,8 +129,8 @@ class bballStatCounter extends Serializable {
   }
 }
 
-object bballStats extends Serializable {
-  def apply(x: Double) = new bballStatCounter().add(x)
+object BballStatCounter extends Serializable {
+  def apply(x: Double) = new BballStatCounter().add(x)
 }
 
 //process raw data into zScores and nScores
@@ -163,7 +147,7 @@ def processStats(stats0:org.apache.spark.rdd.RDD[String],txtStat:Array[String],b
     }    
 
     //map each stat to StatCounter
-    val stats3=stats2.map{case (x,y)=>(x,y.map(a=>a.map(b=>bballStats(b))))}
+    val stats3=stats2.map{case (x,y)=>(x,y.map(a=>a.map(b=>BballStatCounter(b))))}
 
     //merge all stats together
     val stats4=stats3.map{case (x,y)=>(x,y.reduce((a,b)=>a.zip(b).map{ case (c,d)=>c.merge(d)}))}
@@ -196,7 +180,7 @@ def processStatsAgeOrExperience(stats0:org.apache.spark.rdd.RDD[(Int, Array[Doub
     val stats1=stats0.groupByKey()
 
     //turn values into StatCounter objects
-    val stats2=stats1.map{case(x,y)=>(x,y.map(z=>z.map(a=>bballStats(a))))}
+    val stats2=stats1.map{case(x,y)=>(x,y.map(z=>z.map(a=>BballStatCounter(a))))}
 
     //Reduce rows by merging StatCounter objects
     val stats3=stats2.map{case (x,y)=>(x,y.reduce((a,b)=>a.zip(b).map{case(c,d)=>c.merge(d)}))}
@@ -243,7 +227,7 @@ def processStatsAgeOrExperience(stats0:org.apache.spark.rdd.RDD[(Int, Array[Doub
 //********************
 
 //read in all stats
-val stats=sc.textFile("/user/cloudera/BasketballStatsWithYear/*/*")
+val stats=sc.textFile("/user/cloudera/BasketballStatsWithYear/*/*").repartition(sc.defaultParallelism)
 
 //filter out junk rows, clean up data entry errors as well
 val filteredStats=stats.filter(x => !x.contains("FG%")).filter(x => x.contains(",")).map(x=>x.replace("*","").replace(",,",",0,"))
@@ -339,7 +323,7 @@ val dfPlayersT=sqlContext.createDataFrame(nPlayer,schemaN)
 //save all stats as a temp table
 dfPlayersT.registerTempTable("tPlayers")
 
-//calculate experience levels
+//calculate exp and zdiff, ndiff
 val dfPlayers=sqlContext.sql("select age-min_age as exp,tPlayers.* from tPlayers join (select name,min(age)as min_age from tPlayers group by name) as t1 on tPlayers.name=t1.name order by tPlayers.name, exp ")
 
 //save as table
@@ -350,10 +334,9 @@ dfPlayers.saveAsTable("Players")
 //ANALYSIS
 //********************
 
-//Calculate value by age + experience
 
 //group data by player name
-val pStats=nStats.map(x=>(x.name,(x.valueN,x.valueZ,x.age,x.year,x.statsZ))).groupByKey()
+val pStats=dfPlayers.sort(dfPlayers("name"),dfPlayers("exp") asc).map(x=>(x.getString(1),(x.getDouble(50),x.getDouble(40),x.getInt(2),x.getInt(3),Array(x.getDouble(31),x.getDouble(32),x.getDouble(33),x.getDouble(34),x.getDouble(35),x.getDouble(36),x.getDouble(37),x.getDouble(38),x.getDouble(39)),x.getInt(0)))).groupByKey()
 pStats.cache
 
 //for each player, go through all the years and calculate the change in valueZ and valueN, save into two lists 
@@ -362,7 +345,7 @@ pStats.cache
 val excludeNames=dfPlayers.filter(dfPlayers("year")===1980).select(dfPlayers("name")).map(x=>x.mkString).toArray.mkString(",")
 
 val pStats1=pStats.map{ case(name,stats) => 
-     var last =0
+     var last = 0
      var deltaZ = 0.0
      var deltaN = 0.0
      var valueZ = 0.0
@@ -380,14 +363,14 @@ val pStats1=pStats.map{ case(name,stats) =>
           }
           valueN = z._1
           valueZ = z._2
-          last = z._3
+          last = z._4
           aList += ((last, Array(valueZ,valueN,deltaZ,deltaN)))
           if (!excludeNames.contains(z._1)){
+              exp = z._6
               eList += ((exp, Array(valueZ,valueN,deltaZ,deltaN)))
-              exp += 1
+          }
           })
-          (aList,eList)
-     }
+    (aList,eList)
 }
 
 pStats1.cache
