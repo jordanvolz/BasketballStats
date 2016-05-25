@@ -6,14 +6,19 @@ import scala.collection.mutable.ListBuffer
 //Computing Similar Players
 //**********
 
+//load in players data
+val dfPlayers=sqlContext.sql("select * from players")
+val pStats=dfPlayers.sort(dfPlayers("name"),dfPlayers("exp") asc).map(x=>(x.getString(1),(x.getDouble(50),x.getDouble(40),x.getInt(2),x.getInt(3),Array(x.getDouble(31),x.getDouble(32),x.getDouble(33),x.getDouble(34),x.getDouble(35),x.getDouble(36),x.getDouble(37),x.getDouble(38),x.getDouble(39)),x.getInt(0)))).groupByKey()
+val excludeNames=dfPlayers.filter(dfPlayers("year")===1980).select(dfPlayers("name")).map(x=>x.mkString).toArray.mkString(",")
+
 val sStats = pStats.flatMap{ case(x,y)=>{
      var exp = 0
      var aggArr = Array[Double]()
      var eList = ListBuffer[(String, Int, Int, Array[Double])]()
      y.foreach( z => {
           if (!excludeNames.contains(z._1)){
-              aggArr ++ =Array(z._5(0), z._5(1), z._5(2), z._5(3), z._5(4), z._5(5), z._5(6), z._5(7), z._5(8))  
-              eList += ListBuffer((x, exp, z._3, aggArr))
+              aggArr ++= Array(z._5(0), z._5(1), z._5(2), z._5(3), z._5(4), z._5(5), z._5(6), z._5(7), z._5(8))  
+              eList +=  ((x, exp, z._3, aggArr))
               exp += 1
           }
           })
@@ -45,7 +50,6 @@ val schemaS = StructType(
 
 //create data frame
 val dfSimilar = sqlContext.createDataFrame(similarity,schemaS)
-dfSimilar.cache
 
 //save as table
 dfSimilar.saveAsTable("similar")
