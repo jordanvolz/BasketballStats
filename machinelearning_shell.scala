@@ -11,32 +11,32 @@ val dfPlayers=sqlContext.sql("select * from players")
 val pStats=dfPlayers.sort(dfPlayers("name"),dfPlayers("exp") asc).map(x=>(x.getString(1),(x.getDouble(50),x.getDouble(40),x.getInt(2),x.getInt(3),Array(x.getDouble(31),x.getDouble(32),x.getDouble(33),x.getDouble(34),x.getDouble(35),x.getDouble(36),x.getDouble(37),x.getDouble(38),x.getDouble(39)),x.getInt(0)))).groupByKey()
 val excludeNames=dfPlayers.filter(dfPlayers("year")===1980).select(dfPlayers("name")).map(x=>x.mkString).toArray.mkString(",")
 
-val sStats = pStats.flatMap{ case(x,y)=>{
-     var exp = 0
+//combine players seasons into one long array
+val sStats = pStats.flatMap { case(player,stats) => 
+     var exp:Int = 0
      var aggArr = Array[Double]()
      var eList = ListBuffer[(String, Int, Int, Array[Double])]()
-     y.foreach( z => {
-          if (!excludeNames.contains(z._1)){
-              aggArr ++= Array(z._5(0), z._5(1), z._5(2), z._5(3), z._5(4), z._5(5), z._5(6), z._5(7), z._5(8))  
-              eList +=  ((x, exp, z._3, aggArr))
-              exp += 1
-          }
-          })
+     stats.foreach{ case(nTot,zTot,year,age,statline,experience) => 
+          if (!excludeNames.contains(player)){
+              aggArr ++= Array(statline(0), statline(1), statline(2), statline(3), statline(4), statline(5), statline(6), statline(7), statline(8))  
+              eList += ((player, exp, year, aggArr))
+              exp+=1
+          }}
           (eList)
-     }
 }
 
 //key by experience
-val sStats1 = sStats.keyBy(x=>x._2)
+val sStats1 = sStats.keyBy(x => x._2)
 
 //match up players with everyone else of the same experience
 val sStats2 = sStats1.join(sStats1)
 
 //calculate distance
-val sStats3 = sStats2.map(x=>(x._1,x._2._1._1,x._2._2._1,x._2._1._3,math.sqrt(Vectors.sqdist(Vectors.dense(x._2._1._4),Vectors.dense(x._2._2._4)))/math.sqrt(Vectors.dense(x._2._2._4).size)))
+val sStats3 = sStats2.map { case(experience,(player1,player2)) => (experience,player1._1,player2._1,player1._3,math.sqrt(Vectors.sqdist(Vectors.dense(player1._4),Vectors.dense(player2._4)))/math.sqrt(Vectors.dense(player2._4).size))
+}
 
 //filter out players compared to themselves and convert to Row object
-val similarity = sStats3.filter(x => !(x._2==x._3)).map(x=>Row(x._1,x._4,x._2,x._3,x._5))
+val similarity = sStats3.filter(x => (x._2!=x._3)).map(x => Row(x._1,x._4,x._2,x._3,x._5))
 
 //schema for similar players
 val schemaS = StructType(
@@ -50,6 +50,7 @@ val schemaS = StructType(
 
 //create data frame
 val dfSimilar = sqlContext.createDataFrame(similarity,schemaS)
+dfSimilar.cache
 
 //save as table
 dfSimilar.saveAsTable("similar")
@@ -98,8 +99,8 @@ for (stat <- statArray){
   tvs.setTrainRatio(0.75)
 
   //define train and test data
-  val trainData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml3 where year<2016")
-  val testData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml3 where year=2017")
+  val trainData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml where year<2016")
+  val testData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml where year=2017")
 
   //create model
   val model = tvs.fit(trainData)
@@ -117,6 +118,8 @@ for (stat <- statArray){
 
 }
 
-val regression_total = sqlContext.sql("select distinct t7.name, t7.prediction+zpts_temp.prediction as prediction, t7.actual+zpts_temp.label as actual from zpts_temp join (select distinct t6.name, t6.prediction+ztov_temp.prediction as prediction, t6.actual+ztov_temp.label as actual from ztov_temp join (select distinct t5.name, t5.prediction+zblk_temp.prediction as prediction, t5.actual+zblk_temp.label as actual from zblk_temp join (select distinct t4.name, t4.prediction+zstl_temp.prediction as prediction, t4.actual+zstl_temp.label as actual from zstl_temp join (select distinct t3.name, t3.prediction+zast_temp.prediction as prediction, t3.actual+zast_temp.label as actual from zast_temp join (select distinct t2.name, t2.prediction+ztrb_temp.prediction as prediction, t2.actual+ztrb_temp.label as actual from ztrb_temp join (select distinct t1.name, t1.prediction+z3p_temp.prediction as prediction, t1.actual+z3p_temp.label as actual from z3p_temp join (select distinct zfg_temp.name, zfg_temp.prediction+zft_temp.prediction as prediction, zfg_temp.label+zft_temp.label as actual from zfg_temp join zft_temp where zfg_temp.name=zft_temp.name) as t1  where t1.name=z3p_temp.name) as t2  where t2.name=ztrb_temp.name) as t3  where t3.name=zast_temp.name) as t4  where t4.name=zstl_temp.name) as t5  where t5.name=zblk_temp.name) as t6  where t6.name=ztov_temp.name) as t7  where t7.name=zpts_temp.name")
+//add up all individual predictions and save as a table
+val regression_total=sqlContext.sql("select zfg_temp.name, zfg_temp.year, z3p_temp.prediction + zfg_temp.prediction + zft_temp.prediction + ztrb_temp.prediction + zast_temp.prediction + zstl_temp.prediction + zblk_temp.prediction + ztov_temp.prediction + zpts_temp.prediction as prediction, z3p_temp.label + zfg_temp.label + zft_temp.label + ztrb_temp.label + zast_temp.label + zstl_temp.label + zblk_temp.label + ztov_temp.label + zpts_temp.label as label from z3p_temp, zfg_temp, zft_temp, ztrb_temp, zast_temp, zstl_temp, zblk_temp, ztov_temp, zpts_temp where zfg_temp.name=z3p_temp.name and z3p_temp.name=zft_temp.name and zft_temp.name=ztrb_temp.name and ztrb_temp.name=zast_temp.name and zast_temp.name=zstl_temp.name and zstl_temp.name=zblk_temp.name and zblk_temp.name=ztov_temp.name and ztov_temp.name=zpts_temp.name")
 regression_total.saveAsTable("regression_total")
+
 
