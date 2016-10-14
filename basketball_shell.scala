@@ -230,8 +230,23 @@ def processStatsAgeOrExperience(stats0:org.apache.spark.rdd.RDD[(Int, Array[Doub
 val stats=sc.textFile("/user/cloudera/BasketballStatsWithYear/*/*").repartition(sc.defaultParallelism)
 
 //filter out junk rows, clean up data entry errors as well
-val filteredStats=stats.filter(x => !x.contains("FG%")).filter(x => x.contains(",")).map(x=>x.replace("*","").replace(",,",",0,"))
+val cleanStats=stats.filter(x => !x.contains("FG%")).filter(x => x.contains(",")).map(x=>x.replace("*","").replace(",,",",0,"))
 filteredStats.cache()
+
+//remove duplicate rows, use "TOT" row when available
+val filteredStats=cleanStats.map{x=>
+	val pieces=x.split(",")
+	val year=pieces(0)
+	val name=pieces(2)
+	val team=pieces(5)
+	(year+"_"+name,Map(team->x))
+}.reduceByKey(_++_).map{ case(x,y)=>
+	if (y.contains("TOT")){
+	y("TOT")
+	}else{
+	y.last._2
+	}
+}
 
 //process stats and save as map
 val txtStat=Array("FG","FGA","FG%","3P","3PA","3P%","2P","2PA","2P%","eFG%","FT","FTA","FT%","ORB","DRB","TRB","AST","STL","BLK","TOV","PF","PTS")
