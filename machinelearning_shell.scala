@@ -99,7 +99,7 @@ for (stat <- statArray){
   tvs.setTrainRatio(0.75)
 
   //define train and test data
-  val trainData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml where year<2016")
+  val trainData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml where year<2017")
   val testData = sqlContext.sql("select name, year, exp, mp, " + stat + "0," + stat + "  as label from ml where year=2017")
 
   //create model
