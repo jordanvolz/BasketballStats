@@ -231,7 +231,6 @@ val stats=sc.textFile("/user/cloudera/BasketballStatsWithYear/*/*").repartition(
 
 //filter out junk rows, clean up data entry errors as well
 val cleanStats=stats.filter(x => !x.contains("FG%")).filter(x => x.contains(",")).map(x=>x.replace("*","").replace(",,",",0,"))
-filteredStats.cache()
 
 //remove duplicate rows, use "TOT" row when available
 val filteredStats=cleanStats.map{x=>
@@ -247,6 +246,7 @@ val filteredStats=cleanStats.map{x=>
 	y.last._2
 	}
 }
+filteredStats.cache()
 
 //process stats and save as map
 val txtStat=Array("FG","FGA","FG%","3P","3PA","3P%","2P","2PA","2P%","eFG%","FT","FTA","FT%","ORB","DRB","TRB","AST","STL","BLK","TOV","PF","PTS")
