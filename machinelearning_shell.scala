@@ -1,4 +1,5 @@
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.Row
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import scala.collection.mutable.ListBuffer
 
